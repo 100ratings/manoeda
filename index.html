@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Simulador Which Hand — Manoeda</title>
+<style>
+  :root{--bg:#0f1115;--fg:#e6e6e6;--muted:#9aa3b2;--ok:#19c37d;--err:#ff5c5c;--card:#151923}
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial;overflow-x:hidden}
+
+  /* layout desktop, sem overflow */
+  .wrap{width:100%;max-width:1200px;margin:12px auto;padding:0 12px}
+  .card{background:var(--card);border:1px solid #202637;border-radius:10px;padding:14px;width:100%}
+
+  /* header: título à esquerda, stats à direita */
+  .head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+  h1{font-size:26px;margin:0}
+  .statbar{display:flex;gap:10px;flex-wrap:wrap}
+  .stat{background:#121726;border:1px solid #20283a;border-radius:8px;padding:6px 10px;font-size:13px}
+
+  fieldset{border:1px solid #273047;border-radius:10px;padding:12px;width:100%}
+  legend{padding:0 6px;color:#cbd5e1}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+  .btn{background:#1d2433;color:var(--fg);border:1px solid #2a3242;border-radius:10px;padding:12px 14px;font-size:16px;cursor:pointer;text-align:left;white-space:nowrap}
+  .btn:hover{border-color:#3a4760}
+  #instr{white-space:normal}
+  .kbd{font-family:ui-monospace,Consolas,Menlo,monospace;background:#111521;border:1px solid #273047;border-radius:6px;padding:2px 6px;font-size:12px}
+
+  .ans{font-size:18px}
+
+  /* relatório em duas colunas */
+  .report-wrap{width:100%}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .col{background:#0d1017;border:1px solid #273047;border-radius:8px;padding:10px}
+  .col pre{margin:0;font-family:ui-monospace,Consolas,Menlo,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word}
+
+  .option{display:inline-flex;align-items:center;gap:8px;margin-right:14px;cursor:pointer}
+  input[type=radio]{transform:scale(1.1)}
+  .ok{color:var(--ok)} .err{color:var(--err)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="head">
+      <h1>Simulador Which Hand — Manoeda</h1>
+      <div class="statbar">
+        <div class="stat">Rodada: <b id="round">1</b></div>
+        <div class="stat">Acertos: <b id="ok">0</b></div>
+        <div class="stat">Erros: <b id="err">0</b></div>
+        <div class="stat">Série: <b id="streak">0</b></div>
+        <div class="stat">Tempo: <b id="timer">0.0s</b></div>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>Perguntas e instrução</legend>
+      <div class="row">
+        <button id="q1" class="btn">Perguntar: está em alguma das mãos? <span class="kbd">Enter</span></button>
+        <button id="q2" class="btn">Perguntar: está na mão esquerda?</button>
+        <button id="instr" class="btn">Se estiver na direita, coloque no bolso; se já estava no bolso, passe para a esquerda.</button>
+        <button id="next" class="btn" disabled>Próximo <span class="kbd">N</span></button>
+        <button id="scriptBtn" class="btn" title="Roteiro sugerido"><span class="kbd">?</span> Roteiro</button>
+      </div>
+      <div class="ans" id="a1">Q1: —</div>
+      <div class="ans" id="a2">Q2: —</div>
+      <div class="ans" id="a3">Instrução: —</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Minha leitura (final da rotina)</legend>
+      <label class="option"><input type="radio" name="guess" value="L" id="gL"> Esquerda <span class="kbd">E</span></label>
+      <label class="option"><input type="radio" name="guess" value="R" id="gR"> Direita  <span class="kbd">D</span></label>
+    </fieldset>
+
+    <fieldset id="script" style="display:none">
+      <legend>Roteiro sugerido</legend>
+      <div class="col" style="background:#0d1017;border:1px solid #273047;border-radius:8px;padding:10px">
+        <pre>• “Vamos jogar sem moeda: imagine uma moeda e esconda onde quiser.”
+• “Farei duas perguntas de SIM/NÃO. Você pode mentir ou dizer a verdade, mas mantenha a mesma escolha nas duas.”
+• Q1 → “Interessante…”
+• Q2 → “Perfeito.”
+• Instrução: “Se estiver na direita, coloque no bolso; se já estava no bolso, passe para a esquerda.”
+• Fechamento: (use sua leitura final) “Não está na direita… está na esquerda!” (ou “está na direita!”).</pre>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Relatório da rodada</legend>
+      <div class="report-wrap" id="report">
+        <div class="cols">
+          <div class="col"><pre>—</pre></div>
+          <div class="col"><pre>—</pre></div>
+        </div>
+      </div>
+    </fieldset>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const roundEl=$('round'), okEl=$('ok'), errEl=$('err'), streakEl=$('streak'), timerEl=$('timer');
+  const q1Btn=$('q1'), q2Btn=$('q2'), instrBtn=$('instr'), nextBtn=$('next'), scriptBtn=$('scriptBtn');
+  const a1El=$('a1'), a2El=$('a2'), a3El=$('a3'), reportWrap=$('report');
+  const gL=$('gL'), gR=$('gR'); const scriptBox=$('script');
+
+  let round=1, ok=0, err=0, streak=0;
+  let startTime=0, raf=null;
+
+  let initPos='L', truthMode=true;
+  let a1=null, a2=null, v1=0, v2=0, sum=0;
+  let instrApplied=false, currentPos='L', revealed=false;
+
+  const randi=n=>Math.floor(Math.random()*n);
+  const posLabel=p=>p==='L'?'Esquerda':(p==='R'?'Direita':'Bolso');
+  const yn=b=>b?'Sim':'Não';
+
+  function startTimer(){
+    startTime=performance.now();
+    if(raf) cancelAnimationFrame(raf);
+    const tick=()=>{ timerEl.textContent=((performance.now()-startTime)/1000).toFixed(1)+'s'; raf=requestAnimationFrame(tick); };
+    raf=requestAnimationFrame(tick);
+  }
+  function stopTimer(){ if(raf) cancelAnimationFrame(raf); }
+
+  function resetRound(){
+    initPos=['L','R','P'][randi(3)];
+    currentPos=initPos;
+    truthMode=!!randi(2);
+    a1=a2=null; v1=v2=sum=0; instrApplied=false; revealed=false;
+    a1El.textContent='Q1: —'; a2El.textContent='Q2: —'; a3El.textContent='Instrução: —';
+    renderReport(['—']);
+    gL.checked=gR.checked=false;
+    q1Btn.disabled=false; q2Btn.disabled=false; instrBtn.disabled=false; nextBtn.disabled=true;
+    startTimer();
+  }
+  function updateStats(){ roundEl.textContent=round; okEl.textContent=ok; errEl.textContent=err; streakEl.textContent=streak; }
+
+  function askQ1(){
+    if(a1!==null) return;
+    const inHands = (initPos!=='P');
+    a1 = truthMode ? inHands : !inHands; v1 = a1 ? 1 : 2;
+    a1El.textContent = `Q1: ${yn(a1)}`;
+  }
+  function askQ2(){
+    if(a2!==null) return;
+    const isLeft = (initPos==='L');
+    a2 = truthMode ? isLeft : !isLeft; v2 = a2 ? 1 : 2;
+    a2El.textContent = `Q2: ${yn(a2)}`;
+    if(a1!==null) sum = v1+v2;
+  }
+
+  function applyInstruction(){
+    if(instrApplied) return;
+    if(a1===null || a2===null){ a3El.textContent='Instrução: faça Q1 e Q2 antes.'; return; }
+    // direita->bolso, bolso->esquerda, esquerda->esquerda
+    currentPos = (currentPos==='R') ? 'P' : (currentPos==='P' ? 'L' : 'L');
+    instrApplied=true; a3El.textContent='Instrução aplicada.';
+  }
+
+  function methodReading(){ return (sum===3)?'R':'L'; }
+
+  function renderReport(lines){
+    const left = lines.slice(0, Math.ceil(lines.length/2)).join('\n');
+    const right = lines.slice(Math.ceil(lines.length/2)).join('\n') || ' ';
+    reportWrap.innerHTML = `<div class="cols"><div class="col"><pre>${left}</pre></div><div class="col"><pre>${right}</pre></div></div>`;
+  }
+
+  function reveal(finalGuess){
+    if(revealed) return;
+    if(a1===null || a2===null){
+      renderReport(['Conclua Q1 e Q2 antes de escolher Esquerda/Direita.']); gL.checked=gR.checked=false; return;
+    }
+    const needInstruction = (sum !== 3);
+    if(needInstruction && !instrApplied){
+      renderReport(['Aplique a instrução antes de escolher.']); gL.checked=gR.checked=false; return;
+    }
+
+    stopTimer();
+    const finalReal = currentPos; // se soma=3, não mudou; se ≠3, já mudou
+    const correct = (finalGuess===finalReal);
+    if(correct){ ok++; streak++; } else { err++; streak=0; }
+
+    const lines = [
+      `Posição inicial (oculta): ${posLabel(initPos)}`,
+      `Modo do espectador: ${truthMode?'Verdade':'Mentira'} (consistente)`,
+      `Q1: ${yn(a1)}`,
+      `Q2: ${yn(a2)}`,
+      `Soma: ${v1}+${v2}=${sum} → método sugeriria ${methodReading()==='R'?'DIREITA':'ESQUERDA'}`,
+      needInstruction ? 'Instrução: direita→bolso; bolso→esquerda; esquerda→esquerda' : 'Instrução: não aplicada',
+      `Posição final real: ${posLabel(finalReal).toUpperCase()}`,
+      `Sua leitura: ${finalGuess==='L'?'ESQUERDA':'DIREITA'}`,
+      `Resultado: ${correct?'✅ ACERTOU':'❌ ERROU'}`
+    ];
+    renderReport(lines);
+
+    revealed=true;
+    q1Btn.disabled=q2Btn.disabled=instrBtn.disabled=true;
+    nextBtn.disabled=false;
+    updateStats();
+  }
+
+  q1Btn.addEventListener('click', askQ1);
+  q2Btn.addEventListener('click', askQ2);
+  instrBtn.addEventListener('click', applyInstruction);
+  nextBtn.addEventListener('click', ()=>{ round++; updateStats(); resetRound(); });
+  scriptBtn.addEventListener('click', ()=> scriptBox.style.display = (scriptBox.style.display==='none'?'block':'none'));
+  gL.addEventListener('change', ()=>{ if(gL.checked) reveal('L'); });
+  gR.addEventListener('change', ()=>{ if(gR.checked) reveal('R'); });
+
+  document.addEventListener('keydown',(e)=>{
+    const k=e.key.toLowerCase();
+    if(k==='enter'){ if(a1===null) askQ1(); else if(a2===null) askQ2(); else if(sum!==3) applyInstruction(); }
+    else if(k==='n'){ if(!nextBtn.disabled) nextBtn.click(); }
+    else if(k==='e'){ gL.checked=true; gL.dispatchEvent(new Event('change')); }
+    else if(k==='d'){ gR.checked=true; gR.dispatchEvent(new Event('change')); }
+    else if(k==='?'){ scriptBtn.click(); }
+  });
+
+  updateStats();
+  resetRound();
+})();
+</script>
+</body>
+</html>
